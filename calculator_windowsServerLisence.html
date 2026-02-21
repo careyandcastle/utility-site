@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Windows Server 2025 授權費用試算工具</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; color: #333; line-height: 1.6; }
+        .header { text-align: center; margin-bottom: 20px; color: #0078d4; }
+        .container { display: flex; gap: 20px; max-width: 1200px; margin: auto; flex-wrap: wrap; }
+        .panel { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); flex: 1; min-width: 450px; }
+        .full-width { flex: 100%; min-width: 100%; margin-top: 10px; }
+        
+        /* 表單區域樣式 */
+        .form-group { margin-bottom: 20px; background: #fff8f0; padding: 15px; border-left: 4px solid #f25022; border-radius: 4px; }
+        label { font-weight: bold; display: block; margin-bottom: 8px; }
+        input[type="number"] { width: 100px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; }
+        .hint { font-size: 13px; color: #666; margin-top: 5px; display: block; }
+        
+        /* 主機區塊樣式 */
+        #hosts-container { margin-top: 20px; }
+        .host-block { border: 1px solid #e1dfdd; padding: 15px; margin-bottom: 15px; border-radius: 6px; background: #faf9f8; }
+        .host-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-weight: bold; color: #0078d4; }
+        .host-inputs { display: flex; gap: 15px; flex-wrap: wrap; margin-top: 10px; }
+        .input-group { display: flex; flex-direction: column; }
+        .input-group label { font-size: 14px; font-weight: normal; margin-bottom: 4px; }
+        
+        /* 按鈕樣式 */
+        button { background: #0078d4; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 14px; transition: background 0.2s; }
+        button:hover { background: #005a9e; }
+        .btn-remove { background: #d13438; padding: 6px 12px; }
+        .btn-remove:hover { background: #a80000; }
+        
+        /* 結果區域樣式 */
+        .result-box { padding: 15px; margin-bottom: 15px; border-radius: 6px; border: 1px solid #ddd; }
+        .cost-title { font-size: 15px; color: #333; margin-bottom: 5px; font-weight: bold; }
+        .cost-value { font-size: 24px; font-weight: bold; }
+        .cost-breakdown { font-size: 13px; color: #666; margin-top: 8px; border-top: 1px dashed #ccc; padding-top: 8px; }
+        .winner { background-color: #e8f5e9; border-color: #4caf50; }
+        .winner .cost-value { color: #2e7d32; }
+        .chart-container { position: relative; height: 300px; width: 100%; margin-top: 30px; }
+
+        /* 公式區域樣式 */
+        .formula-box { background: #f3f2f1; padding: 20px; border-radius: 6px; border-left: 4px solid #0078d4; font-family: 'Consolas', 'Courier New', Courier, monospace; font-size: 14px; }
+        .formula-item { margin-bottom: 15px; }
+        .formula-item strong { color: #0078d4; font-family: 'Segoe UI', sans-serif;}
+        .host-formula { margin-left: 20px; border-left: 2px solid #ccc; padding-left: 15px; margin-top: 10px; }
+        .host-formula div { margin-bottom: 4px; }
+        .highlight-calc { background: #e1dfdd; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2>Windows Server 2025 授權費用試算工具</h2>
+    </div>
+
+    <div class="container">
+        <div class="panel">
+            <h3>環境參數設定</h3>
+            <div class="form-group">
+                <label for="total-users">全環境不重複存取人數 / 設備數 (U<sub>total</sub>)</label>
+                <input type="number" id="total-users" value="3000" min="0" oninput="calculateCosts()">
+                <span class="hint">⚠️ 只要有使用到 AD 網域、DHCP、DNS 或存取伺服器檔案，皆需具備 Windows Server CAL。</span>
+            </div>
+            
+            <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+            
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h3 style="margin: 0;">實體主機與 VM 配置</h3>
+                <button onclick="addHost()">+ 新增實體主機</button>
+            </div>
+            
+            <div id="hosts-container">
+                </div>
+        </div>
+
+        <div class="panel">
+            <h3>試算結果分析</h3>
+            
+            <div id="result-std" class="result-box">
+                <div class="cost-title">方案 A：Standard (標準版) 總價</div>
+                <div class="cost-value" id="cost-std-val">NT$ 0</div>
+                <div class="cost-breakdown" id="breakdown-std">伺服器授權: 0 | CAL 授權: 0</div>
+            </div>
+            
+            <div id="result-dc" class="result-box">
+                <div class="cost-title">方案 B：Datacenter (資料中心版) 總價</div>
+                <div class="cost-value" id="cost-dc-val">NT$ 0</div>
+                <div class="cost-breakdown" id="breakdown-dc">伺服器授權: 0 | CAL 授權: 0</div>
+            </div>
+
+            <div class="chart-container">
+                <canvas id="costChart"></canvas>
+            </div>
+        </div>
+
+        <div class="panel full-width">
+            <h3>🧮 費用計算公式與明細 (動態帶入)</h3>
+            <div class="formula-box" id="dynamic-formula-box">
+                </div>
+        </div>
+    </div>
+
+    <script>
+        // 定價常數 (新台幣 CSP 參考報價)
+        const P_CAL = 1800; // Windows Server User CAL
+        const P_STD_2CORE = 4800;  // Standard 2核心包
+        const P_DC_2CORE = 27600;  // Datacenter 2核心包
+
+        let hostCount = 0;
+        let chartInstance = null;
+
+        function initChart() {
+            const ctx = document.getElementById('costChart').getContext('2d');
+            chartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Standard (標準版)', 'Datacenter (資料中心版)'],
+                    datasets: [{
+                        label: '預估總費用 (NT$)',
+                        data: [0, 0],
+                        backgroundColor: ['#0078d4', '#742774'],
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, ticks: { callback: function(value) { return 'NT$ ' + value.toLocaleString(); } } } },
+                    plugins: { tooltip: { callbacks: { label: function(context) { return 'NT$ ' + context.raw.toLocaleString(); } } } }
+                }
+            });
+        }
+
+        function addHost() {
+            hostCount++;
+            const hostId = `host-${Date.now()}`;
+            const hostHtml = `
+                <div class="host-block" id="${hostId}" data-index="${hostCount}">
+                    <div class="host-header">
+                        <span>實體主機 #${hostCount}</span>
+                        <button class="btn-remove" onclick="removeElement('${hostId}')">刪除主機</button>
+                    </div>
+                    <div class="host-inputs">
+                        <div class="input-group">
+                            <label>實體 CPU 數量</label>
+                            <input type="number" class="cpu-count" value="2" min="1" oninput="calculateCosts()">
+                        </div>
+                        <div class="input-group">
+                            <label>實體總核心數</label>
+                            <input type="number" class="core-count" value="16" min="1" oninput="calculateCosts()">
+                        </div>
+                        <div class="input-group">
+                            <label>預計運行 VM 數</label>
+                            <input type="number" class="vm-count" value="2" min="0" oninput="calculateCosts()">
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('hosts-container').insertAdjacentHTML('beforeend', hostHtml);
+            calculateCosts();
+        }
+
+        function removeElement(elementId) {
+            document.getElementById(elementId).remove();
+            calculateCosts();
+        }
+
+        function calculateCosts() {
+            const totalUsers = parseInt(document.getElementById('total-users').value) || 0;
+            const hosts = document.querySelectorAll('.host-block');
+            
+            let totalStdServerCost = 0;
+            let totalDcServerCost = 0;
+            const calCost = totalUsers * P_CAL;
+
+            let formulaHtml = ``;
+
+            // 1. CAL 計算公式
+            formulaHtml += `
+                <div class="formula-item">
+                    <strong>1. CAL 連線授權費用：</strong><br>
+                    ${totalUsers} (人/設備) × NT$ ${P_CAL.toLocaleString()} = <span class="highlight-calc">NT$ ${calCost.toLocaleString()}</span>
+                </div>
+                <div class="formula-item">
+                    <strong>2. 伺服器核心授權費用 (按主機獨立計算)：</strong>
+            `;
+
+            let index = 1;
+            hosts.forEach(host => {
+                const cpus = parseInt(host.querySelector('.cpu-count').value) || 0;
+                const cores = parseInt(host.querySelector('.core-count').value) || 0;
+                const vms = parseInt(host.querySelector('.vm-count').value) || 0;
+
+                // 微軟核心計算法則
+                let requiredCores = Math.max(16, cores, cpus * 8);
+                let corePacks = Math.ceil(requiredCores / 2);
+
+                // 計算疊加倍數 (Stacking)
+                let stdMultiplier = vms > 0 ? Math.ceil(vms / 2) : 1;
+                
+                let hostDcCost = corePacks * P_DC_2CORE;
+                let hostStdCost = (corePacks * P_STD_2CORE) * stdMultiplier;
+
+                totalDcServerCost += hostDcCost;
+                totalStdServerCost += hostStdCost;
+
+                formulaHtml += `
+                    <div class="host-formula">
+                        <strong style="color:#333;">實體主機 #${index}</strong>
+                        <div>• 基本核心數需求 = Max(16, ${cores}核, ${cpus}顆CPU × 8) = <strong>${requiredCores} 核心</strong></div>
+                        <div>• 需採購 2核心包數量 = 無條件進位( ${requiredCores} ÷ 2 ) = <strong>${corePacks} 套</strong></div>
+                        <div style="margin-top: 8px; color: #742774;">▶ Datacenter 成本 = ${corePacks} 套 × NT$ ${P_DC_2CORE.toLocaleString()} = <strong>NT$ ${hostDcCost.toLocaleString()}</strong> (可開無限台 VM)</div>
+                        <div style="color: #0078d4;">▶ Standard 成本 = ${corePacks} 套 × NT$ ${P_STD_2CORE.toLocaleString()} × 疊加倍數 ⌈${vms}台VM ÷ 2⌉ = <strong>NT$ ${hostStdCost.toLocaleString()}</strong></div>
+                    </div>
+                `;
+                index++;
+            });
+
+            formulaHtml += `</div><hr style="border: 0; border-top: 1px dashed #ccc; margin: 15px 0;">`;
+
+            const totalStdCost = totalStdServerCost + calCost;
+            const totalDcCost = totalDcServerCost + calCost;
+
+            // 總結公式
+            formulaHtml += `
+                <div class="formula-item">
+                    <strong style="color: #742774;">📌 方案 B：Datacenter (資料中心版) 總成本</strong><br>
+                    伺服器加總 (NT$ ${totalDcServerCost.toLocaleString()}) + CAL費用 (NT$ ${calCost.toLocaleString()}) = <span class="highlight-calc" style="color: #742774;">NT$ ${totalDcCost.toLocaleString()}</span>
+                </div>
+                <div class="formula-item">
+                    <strong style="color: #0078d4;">📌 方案 A：Standard (標準版) 總成本</strong><br>
+                    伺服器加總 (NT$ ${totalStdServerCost.toLocaleString()}) + CAL費用 (NT$ ${calCost.toLocaleString()}) = <span class="highlight-calc" style="color: #0078d4;">NT$ ${totalStdCost.toLocaleString()}</span>
+                </div>
+            `;
+
+            document.getElementById('dynamic-formula-box').innerHTML = formulaHtml;
+
+            // 更新畫面總計與圖表
+            document.getElementById('cost-std-val').innerText = `NT$ ${totalStdCost.toLocaleString()}`;
+            document.getElementById('breakdown-std').innerText = `伺服器授權: NT$ ${totalStdServerCost.toLocaleString()} | CAL 授權: NT$ ${calCost.toLocaleString()}`;
+            
+            document.getElementById('cost-dc-val').innerText = `NT$ ${totalDcCost.toLocaleString()}`;
+            document.getElementById('breakdown-dc').innerText = `伺服器授權: NT$ ${totalDcServerCost.toLocaleString()} | CAL 授權: NT$ ${calCost.toLocaleString()}`;
+
+            // 標記最划算方案
+            document.getElementById('result-std').classList.remove('winner');
+            document.getElementById('result-dc').classList.remove('winner');
+            
+            if (hosts.length > 0 || totalUsers > 0) {
+                if (totalStdCost <= totalDcCost) {
+                    document.getElementById('result-std').classList.add('winner');
+                } else {
+                    document.getElementById('result-dc').classList.add('winner');
+                }
+            }
+
+            if (chartInstance) {
+                chartInstance.data.datasets[0].data = [totalStdCost, totalDcCost];
+                chartInstance.update();
+            }
+        }
+
+        window.onload = () => {
+            initChart();
+            addHost(); 
+        };
+    </script>
+</body>
+</html>
